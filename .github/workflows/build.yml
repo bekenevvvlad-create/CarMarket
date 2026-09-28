@@ -2,20 +2,15 @@
 name: Build CarMarket Fixed v4 APK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - '**/*.zip'
-      - '.github/workflows/build.yml'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build CarMarket Fixed v4 APK
     runs-on: ubuntu-latest
 
     steps:
@@ -28,119 +23,59 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.11.1
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      - name: Check Android SDK
-        shell: bash
+      - name: Find Fixed v4 ZIP
         run: |
-          set -euo pipefail
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-
-          if [ ! -d "$SDK_ROOT" ]; then
-            echo "ERROR: Android SDK not found: $SDK_ROOT"
-            exit 1
-          fi
-
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found"
-            exit 1
-          fi
-
-          echo "$SDKMANAGER" > "$RUNNER_TEMP/sdkmanager_path"
-
-      - name: Accept Android SDK licenses
-        shell: bash
-        run: |
-          set -e
-          SDKMANAGER="$(cat "$RUNNER_TEMP/sdkmanager_path")"
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses || true
-
-      - name: Install Android SDK packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDKMANAGER="$(cat "$RUNNER_TEMP/sdkmanager_path")"
-
-          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Find and verify Fixed v4 archive
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ZIP_PATH="$(find . -type f \
-            -iname 'CarMarket-Android-Project-Fixed-v4.zip' \
-            -print -quit)"
+          ZIP_PATH=$(find . -type f -name "CarMarket-Android-Project-Fixed-v4.zip" -print -quit)
 
           if [ -z "$ZIP_PATH" ]; then
-            echo "ERROR: Fixed v4 ZIP not found."
-            echo "ZIP files in repository:"
-            find . -type f -iname '*.zip' -print || true
+            echo "ERROR: Fixed v4 ZIP not found!"
+            find . -type f -name "*.zip"
             exit 1
           fi
 
-          echo "Found archive: $ZIP_PATH"
-          unzip -t "$ZIP_PATH"
-          echo "CARMARKET_ZIP=$ZIP_PATH" >> "$GITHUB_ENV"
+          echo "Found: $ZIP_PATH"
+          echo "PROJECT_ZIP=$ZIP_PATH" >> $GITHUB_ENV
 
-      - name: Extract Fixed v4 project
-        shell: bash
+      - name: Extract project
         run: |
-          set -euo pipefail
-          rm -rf project
           mkdir -p project
-          unzip -q "$CARMARKET_ZIP" -d project
+          unzip -o "$PROJECT_ZIP" -d project
 
       - name: Find Android project
         id: project
-        shell: bash
         run: |
-          set -euo pipefail
-
-          SETTINGS_FILE="$(find project -type f \
+          SETTINGS=$(find project -type f \
             \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -print -quit)"
+            -print -quit)
 
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Gradle settings file not found."
-            find project -maxdepth 6 -type f | head -200
+          if [ -z "$SETTINGS" ]; then
+            echo "Gradle settings file not found!"
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          PROJECT_DIR=$(dirname "$SETTINGS")
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
              [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERROR: app module Gradle file not found."
-            find "$PROJECT_DIR" -maxdepth 4 -type f | head -200
+            echo "App Gradle file not found!"
             exit 1
           fi
 
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Android project: $PROJECT_DIR"
+          echo "dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
 
-      - name: Build Debug APK
+      - name: Build APK
         working-directory: ${{ steps.project.outputs.dir }}
-        shell: bash
         run: |
-          set -euo pipefail
-
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew --no-daemon clean assembleDebug --stacktrace
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew clean assembleDebug
           else
-            gradle --no-daemon clean assembleDebug --stacktrace
+            gradle clean assembleDebug
           fi
 
       - name: Upload APK
@@ -149,4 +84,3 @@ jobs:
           name: CarMarket-Fixed-v4-APK
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
