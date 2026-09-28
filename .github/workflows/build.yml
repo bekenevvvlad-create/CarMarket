@@ -1,16 +1,20 @@
-name: Build CarMarket APK
+
+name: CarMarket Android Build
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
-    paths:
-      - 'CarMarket-Android-Project-Fixed-v3.zip'
-      - '.github/workflows/build.yml'
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build CarMarket APK
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,27 +27,57 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
       - name: Install Android SDK packages
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Extract project
         run: |
-          mkdir -p project
-          unzip -o CarMarket-Android-Project-Fixed-v3.zip -d project
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Build APK
-        working-directory: project/CarMarketAndroid
-        run: gradle --no-daemon assembleDebug
+      - name: Check fixed v3 archive
+        run: |
+          if [ ! -f "CarMarket-Android-Project-Fixed-v3.zip" ]; then
+            echo "ERROR: CarMarket-Android-Project-Fixed-v3.zip not found"
+            exit 1
+          fi
+          echo "Fixed v3 archive found"
+
+      - name: Extract fixed v3 project
+        run: |
+          mkdir -p source
+          unzip -q "CarMarket-Android-Project-Fixed-v3.zip" -d source
+
+      - name: Find Android project
+        id: project
+        run: |
+          GRADLEW=$(find source -type f -name gradlew -print -quit)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: gradlew not found in archive"
+            echo "Archive contents:"
+            find source -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW")
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          chmod +x "$GRADLEW"
+
+      - name: Build Debug APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CarMarket-debug-apk
-          path: project/CarMarketAndroid/app/build/outputs/apk/debug/app-debug.apk
+          name: CarMarket-Fixed-v3-APK
+          path: source/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 14
