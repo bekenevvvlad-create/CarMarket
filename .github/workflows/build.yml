@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'CarMarket-Android-Project-Fixed-v3.zip'
+      - 'CarMarket-Android-Project-Fixed-v4.zip'
       - '.github/workflows/build.yml'
 
 permissions:
@@ -33,7 +33,9 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Check Android SDK
+        shell: bash
         run: |
+          set -e
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 
           if [ ! -d "$SDK_ROOT" ]; then
@@ -41,84 +43,75 @@ jobs:
             exit 1
           fi
 
-          echo "Using Android SDK: $SDK_ROOT"
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
-
           if [ -z "$SDKMANAGER" ]; then
             echo "ERROR: sdkmanager not found"
-            find "$SDK_ROOT/cmdline-tools" -maxdepth 4 -type f 2>/dev/null | head -100 || true
             exit 1
           fi
 
-          echo "SDK manager: $SDKMANAGER"
           echo "$SDKMANAGER" > "$RUNNER_TEMP/sdkmanager_path"
+          echo "Using sdkmanager: $SDKMANAGER"
 
       - name: Accept Android SDK licenses
+        shell: bash
         run: |
           SDKMANAGER="$(cat "$RUNNER_TEMP/sdkmanager_path")"
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses || true
 
       - name: Install Android SDK packages
+        shell: bash
         run: |
           SDKMANAGER="$(cat "$RUNNER_TEMP/sdkmanager_path")"
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install             "platform-tools"             "platforms;android-35"             "build-tools;35.0.0"
 
-      - name: Check project archive
+      - name: Verify fixed v4 archive
+        shell: bash
         run: |
-          ZIP="CarMarket-Android-Project-Fixed-v3.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERROR: $ZIP was not found in the repository root"
-            echo "Repository files:"
-            ls -la
-            exit 1
-          fi
-
-          echo "Archive found:"
-          ls -lh "$ZIP"
+          ZIP="CarMarket-Android-Project-Fixed-v4.zip"
+          test -f "$ZIP"
           unzip -t "$ZIP"
 
-      - name: Extract project
+      - name: Extract fixed v4 project
+        shell: bash
         run: |
           rm -rf project
           mkdir -p project
-          unzip -q "CarMarket-Android-Project-Fixed-v3.zip" -d project
-
-          echo "Searching for Gradle project..."
-          find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print
+          unzip -q "CarMarket-Android-Project-Fixed-v4.zip" -d project
 
       - name: Find Android project
         id: project
+        shell: bash
         run: |
           SETTINGS_FILE="$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: settings.gradle or settings.gradle.kts not found"
+            echo "ERROR: Gradle settings file not found in archive"
             find project -maxdepth 6 -type f | head -200
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-          echo "Project directory: $PROJECT_DIR"
           echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Project directory: $PROJECT_DIR"
 
       - name: Build Debug APK
         working-directory: ${{ steps.project.outputs.dir }}
+        shell: bash
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew --no-daemon assembleDebug --stacktrace
+            ./gradlew --no-daemon clean assembleDebug --stacktrace
           else
-            gradle --no-daemon assembleDebug --stacktrace
+            gradle --no-daemon clean assembleDebug --stacktrace
           fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CarMarket-Fixed-v3-APK
+          name: CarMarket-Fixed-v4-APK
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
