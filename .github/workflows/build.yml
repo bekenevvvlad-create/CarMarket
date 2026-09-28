@@ -43,20 +43,20 @@ jobs:
             exit 1
           fi
 
-          yes | "$SDKMANAGER" --licenses
+          yes | "$SDKMANAGER" --licenses || true
 
           "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Extract fixed project
+      - name: Extract fixed project v2
         run: |
-          test -f CarMarket-Android-Project-Fixed.zip
+          test -f CarMarket-Android-Project-Fixed-v2.zip
           mkdir -p source
-          unzip -q CarMarket-Android-Project-Fixed.zip -d source
+          unzip -q CarMarket-Android-Project-Fixed-v2.zip -d source
           echo "ZIP extracted"
-          find source -maxdepth 4 \
+          find source -maxdepth 5 \
             \( -name gradlew -o -name settings.gradle \
             -o -name settings.gradle.kts \) -print
 
