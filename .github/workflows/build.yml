@@ -56,8 +56,7 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: |
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses
+          yes | "$SDKMANAGER" --licenses || true
 
       - name: Install Android SDK packages
         run: |
@@ -66,13 +65,64 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
+      - name: Extract Android project
+        run: |
+          ARCHIVE=$(find . -maxdepth 1 -type f -iname '*.zip' \
+            | grep -i 'photoreal' | head -n 1 || true)
+
+          if [ -z "$ARCHIVE" ]; then
+            ARCHIVE=$(find . -maxdepth 1 -type f -iname '*.zip' \
+              | grep -i 'Android.*Project' | head -n 1 || true)
+          fi
+
+          if [ -z "$ARCHIVE" ]; then
+            echo "ERROR: Android project ZIP not found in repository root"
+            echo "ZIP files found:"
+            find . -maxdepth 1 -type f -iname '*.zip'
+            exit 1
+          fi
+
+          echo "Using archive: $ARCHIVE"
+          mkdir -p extracted
+          unzip -oq "$ARCHIVE" -d extracted
+
+          SETTINGS=$(find extracted -type f \
+            \( -name settings.gradle \
+            -o -name settings.gradle.kts \) \
+            -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle(.kts) not found in archive"
+            find extracted -maxdepth 4 -type f | head -n 100
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Android project found in: $PROJECT_DIR"
+
       - name: Build APK
-        run: gradle --no-daemon clean assembleDebug --stacktrace
+        run: |
+          cd "$PROJECT_DIR"
+          gradle --no-daemon clean assembleDebug --stacktrace
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+
+          APK=$(find app/build/outputs/apk/debug \
+            -type f -name '*.apk' -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK file was not created"
+            exit 1
+          fi
+
+          cp "$APK" "$GITHUB_WORKSPACE/artifacts/CarMarket-debug.apk"
+          echo "APK successfully copied to artifacts"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: CarMarket-v4-photoreal-cars-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: artifacts/CarMarket-debug.apk
           if-no-files-found: error
           retention-days: 14
